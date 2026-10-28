@@ -38,9 +38,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		constexpr int kMaxDiagonalOrder = kTileColumns + kTileRows - 2;
 		constexpr float kTransitionPhaseDuration = kMaxDiagonalOrder * kTileDelay + kTileDuration;
 		constexpr float kFlipAngle = 1.5707963f;
-		constexpr float kWorldUnitsPerPixel = 0.046024f; // 720p viewport at 40 units from the default 45-degree camera.
+		constexpr float kWorldUnitsPerPixel = 0.046024f;
 		constexpr float kTransitionTileDepth = -30.0f;
-		constexpr float kTransitionTileScale = 0.5f; // Depth is halved, so halve the scale to preserve its screen size.
+		constexpr float kTransitionTileScale = 0.5f;
 		const uint32_t transitionTexture = TextureManager::Load("blockPanel.png");
 		Camera transitionCamera;
 		transitionCamera.Initialize();
@@ -62,12 +62,16 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 				TransitionTile tile;
 				tile.screenPosition = {column * kTileWidth + kTileWidth * 0.5f, row * kTileHeight + kTileHeight * 0.5f};
 				tile.diagonalOrder = (kTileColumns - 1 - column) + (kTileRows - 1 - row);
+				tile.isVisible = false;
 				tile.transform = new WorldTransform();
-				tile.transform->Initialize();
-			tile.transform->scale_ = {(kTileWidth + 3.0f) * kWorldUnitsPerPixel * 0.5f * kTransitionTileScale, (kTileHeight + 3.0f) * kWorldUnitsPerPixel * 0.5f * kTransitionTileScale, 0.01f};
-			tile.transform->translation_ = {(tile.screenPosition.x - 640.0f) * kWorldUnitsPerPixel * kTransitionTileScale, (360.0f - tile.screenPosition.y) * kWorldUnitsPerPixel * kTransitionTileScale, kTransitionTileDepth};
-				tile.transform->matWorld_ = MakeAffineMatrix(tile.transform->scale_, tile.transform->rotation_, tile.transform->translation_);
-				tile.transform->TransferMatrix();
+				if (tile.transform) {
+					tile.transform->Initialize();
+					tile.transform->scale_ = {(kTileWidth + 3.0f) * kWorldUnitsPerPixel * 0.5f * kTransitionTileScale, (kTileHeight + 3.0f) * kWorldUnitsPerPixel * 0.5f * kTransitionTileScale, 0.01f};
+					tile.transform->translation_ = {(tile.screenPosition.x - 640.0f) * kWorldUnitsPerPixel * kTransitionTileScale, (360.0f - tile.screenPosition.y) * kWorldUnitsPerPixel * kTransitionTileScale, kTransitionTileDepth};
+					tile.transform->rotation_.y = kFlipAngle;
+					tile.transform->matWorld_ = MakeAffineMatrix(tile.transform->scale_, tile.transform->rotation_, tile.transform->translation_);
+					tile.transform->TransferMatrix();
+				}
 				if (!transitionTileModel) {
 					delete tile.transform;
 					tile.transform = nullptr;
@@ -75,6 +79,16 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 				transitionTiles.push_back(tile);
 			}
 		}
+		auto ResetTransitionTilesForFill = [&transitionTiles]() {
+			for (TransitionTile& tile : transitionTiles) {
+				if (tile.transform) {
+					tile.isVisible = false;
+					tile.transform->rotation_.y = kFlipAngle;
+					tile.transform->matWorld_ = MakeAffineMatrix(tile.transform->scale_, tile.transform->rotation_, tile.transform->translation_);
+					tile.transform->TransferMatrix();
+				}
+			}
+		};
 		bool isTransitioning = false;
 		bool isTransitioningOut = false;
 		bool isTransitioningToGame = false;
@@ -101,9 +115,6 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 					const float localProgress = std::clamp((transitionTimer - order * kTileDelay) / kTileDuration, 0.0f, 1.0f);
 					const float eased = localProgress * localProgress * (3.0f - 2.0f * localProgress);
 					tile.isVisible = isTransitioningOut ? localProgress < 1.0f : localProgress > 0.0f;
-					tile.transform->translation_.x = (tile.screenPosition.x - 640.0f) * kWorldUnitsPerPixel * kTransitionTileScale;
-					tile.transform->translation_.y = (360.0f - tile.screenPosition.y) * kWorldUnitsPerPixel * kTransitionTileScale;
-					tile.transform->translation_.z = kTransitionTileDepth;
 					tile.transform->rotation_.y = isTransitioningOut ? eased * kFlipAngle : (1.0f - eased) * kFlipAngle;
 					tile.transform->matWorld_ = MakeAffineMatrix(tile.transform->scale_, tile.transform->rotation_, tile.transform->translation_);
 					tile.transform->TransferMatrix();
@@ -133,12 +144,14 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 					isTransitioningOut = false;
 					isTransitioningToGame = false;
 					transitionTimer = 0.0f;
+					ResetTransitionTilesForFill();
 				}
 			} else if (titleScene.Update()) {
 				isTransitioning = true;
 				transitionTimer = 0.0f;
 				isTransitioningOut = false;
 				isTransitioningToGame = true;
+				ResetTransitionTilesForFill();
 			}
 
 			dxCommon->PreDraw();
@@ -148,6 +161,8 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 				titleScene.Draw();
 			}
 			if (isTransitioning) {
+				// シーンの深度を消してから3Dタイルを描き、常に最前面へ重ねる。
+				dxCommon->ClearDepthBuffer();
 				Model::PreDraw(dxCommon->GetCommandList());
 				for (TransitionTile& tile : transitionTiles) {
 					if (transitionTileModel && tile.transform && tile.isVisible) {

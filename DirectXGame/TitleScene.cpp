@@ -102,13 +102,13 @@ bool TitleScene::Update() {
 	}
 	const float buttonProgress = std::clamp((titleElapsedSeconds_ - 0.15f) / 0.55f, 0.0f, 1.0f);
 	const float easedButton = buttonProgress * buttonProgress * (3.0f - 2.0f * buttonProgress);
-	buttonScale_ = 0.96f + 0.04f * easedButton;
 	buttonOffsetY_ = 10.0f * (1.0f - easedButton);
 	const float idleTime = titleElapsedSeconds_ > 0.6f ? titleElapsedSeconds_ - 0.6f : 0.0f;
-	const float buttonPulse = 0.775f + 0.225f * std::sin(idleTime * 2.0f * 3.14159265f / 2.4f);
+	const float buttonIdleScale = 1.0f + 0.04f * std::sin(idleTime * 2.0f * 3.14159265f / 2.4f);
+	buttonScale_ = (0.96f + 0.04f * easedButton) * buttonIdleScale;
 	if (startButtonModel_) {
 		SetCardTransform(startButtonTransform_, {640.0f, 490.0f + buttonOffsetY_}, {251.0f * buttonScale_, 82.0f * buttonScale_}, 0.0f, -5.0f);
-		startButtonModel_->SetAlpha(easedButton * buttonPulse);
+		startButtonModel_->SetAlpha(easedButton);
 	}
 	if (titleUnderlineModel_) {
 		SetCardTransform(titleUnderlineTransform_, {640.0f, 253.5f + titleOffsetY_ + 16.5f * titleScale_}, {221.0f * titleScale_, 4.0f * titleScale_}, 0.0f, -5.2f);

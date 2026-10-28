@@ -985,6 +985,11 @@ void GameScene::Draw() {
 	if (skySphere_) {
 		skySphere_->Draw(skySphereTransform_, camera_, skyTexture_);
 	}
+	// シーン遷移中はステージのブロックを隠し、スタートカウントダウン開始時に表示する。
+	if (!isStartCountdownReady_) {
+		Model::PostDraw();
+		return;
+	}
 	auto DrawBlock = [&](WorldTransform* block) {
 		if (!block || !modelBlock_) {
 			return;
