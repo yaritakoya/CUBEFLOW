@@ -21,6 +21,7 @@ public:
 	// 画面遷移が完了した時点で開始演出を始める。
 	void BeginStartCountdown();
 	bool IsStartCountdownComplete() const { return isStartCountdownReady_ && !isStartCountdownActive_; }
+	bool IsReturnToTitleRequested() const { return isReturnToTitleRequested_; }
 
 	// 描画
 	void Draw();
@@ -37,6 +38,18 @@ private:
 	Model* modelPrediction_ = nullptr;
 	ObjectColor hazardBlockColor_;
 	float playerDamageTimer_ = 0.0f;
+	struct BurstParticle {
+		WorldTransform transform;
+		Vector3 velocity{};
+		float life = 0.0f;
+	};
+	std::array<BurstParticle, 24> burstParticles_{};
+	float deathTimer_ = -1.0f;
+	bool isGameOver_ = false;
+	float gameOverTimer_ = 0.0f;
+	bool isReturnToTitleRequested_ = false;
+	Sprite* gameOverSprite_ = nullptr;
+	Sprite* gameOverDimSprite_ = nullptr;
 	std::array<WorldTransform, 10> predictionTransforms_{};
 	size_t predictionCount_ = 0;
 

@@ -24,6 +24,10 @@ void GameScene::Release() {
 	startCountdownSprites_.fill(nullptr);
 	delete startCountdownGlowSprite_;
 	startCountdownGlowSprite_ = nullptr;
+	delete gameOverSprite_;
+	gameOverSprite_ = nullptr;
+	delete gameOverDimSprite_;
+	gameOverDimSprite_ = nullptr;
 
 	for (std::vector<WorldTransform*>& worldTransformBlockLine : worldTransformBlocks_) {
 		for (WorldTransform* worldTransformBlock : worldTransformBlockLine) {
@@ -129,6 +133,14 @@ void GameScene::Initialize() {
 	hazardBlockColor_.Initialize();
 	hazardBlockColor_.SetColor({1.0f, 0.0f, 0.0f, 1.0f});
 	playerDamageTimer_ = 0.0f;
+	deathTimer_ = -1.0f;
+	isGameOver_ = false;
+	gameOverTimer_ = 0.0f;
+	isReturnToTitleRequested_ = false;
+	for (BurstParticle& particle : burstParticles_) {
+		particle.transform.Initialize();
+		particle.life = 0.0f;
+	}
 	if (modelPrediction_) {
 		modelPrediction_->SetAlpha(0.3f);
 	}
@@ -151,6 +163,16 @@ void GameScene::Initialize() {
 	startCountdownGlowSprite_ = Sprite::Create(TextureManager::Load("countdownStart.png"), {0.0f, 0.0f});
 	if (startCountdownGlowSprite_) {
 		startCountdownGlowSprite_->SetSize({860.0f, 265.0f});
+	}
+	gameOverSprite_ = Sprite::Create(TextureManager::Load("gameOver.png"), {349.5f, 266.5f});
+	if (gameOverSprite_) {
+		gameOverSprite_->SetSize({581.0f, 187.0f});
+		gameOverSprite_->SetColor({1.0f, 1.0f, 1.0f, 0.0f});
+	}
+	gameOverDimSprite_ = Sprite::Create(TextureManager::Load("black1x1.png"), {0.0f, 0.0f});
+	if (gameOverDimSprite_) {
+		gameOverDimSprite_->SetSize({1280.0f, 720.0f});
+		gameOverDimSprite_->SetColor({0.0f, 0.0f, 0.0f, 0.0f});
 	}
 
 	// プレイヤーもブロックと同じ3Dモデルで描画する。
@@ -272,6 +294,38 @@ void GameScene::Update() {
 		}
 		return;
 	}
+	if (deathTimer_ >= 0.0f) {
+		deathTimer_ += 1.0f / 60.0f;
+		for (BurstParticle& particle : burstParticles_) {
+			if (particle.life <= 0.0f) continue;
+			particle.life -= 1.0f / 60.0f;
+			particle.transform.translation_.x += particle.velocity.x;
+			particle.transform.translation_.y += particle.velocity.y;
+			particle.velocity.y -= 0.006f;
+			const float scale = (std::max)(0.02f, particle.life * 0.42f);
+			particle.transform.scale_ = {scale, scale, scale};
+			particle.transform.rotation_.z += 0.12f;
+			particle.transform.matWorld_ = MakeAffineMatrix(particle.transform.scale_, particle.transform.rotation_, particle.transform.translation_);
+			particle.transform.TransferMatrix();
+		}
+		if (deathTimer_ >= 1.0f) {
+			isGameOver_ = true;
+			gameOverTimer_ += 1.0f / 60.0f;
+			// フェード完了後もしばらく表示を保ち、通常のキーボードキーだけを遷移入力として見る。
+			if (gameOverTimer_ >= 3.0f) {
+				Input* input = Input::GetInstance();
+				for (int key = DIK_ESCAPE; key <= DIK_F12; ++key) {
+					if (input->TriggerKey(static_cast<BYTE>(key))) {
+						isReturnToTitleRequested_ = true;
+						break;
+					}
+				}
+			}
+		}
+		if (!isGameOver_ || gameOverTimer_ < 1.85f) {
+			return;
+		}
+	}
 	playerDamageTimer_ = playerDamageTimer_ > 1.0f / 60.0f ? playerDamageTimer_ - 1.0f / 60.0f : 0.0f;
 
 	// アニメーションタイマーは1フレームごとに0.03進むため、60fps換算の0.8秒分を待つ。
@@ -279,11 +333,13 @@ void GameScene::Update() {
 	animationTimer_ += 0.03f;
 
 	// Eキーで時計回り、Qキーで逆回転する。
-	if (Input::GetInstance()->TriggerKey(DIK_E)) {
-		targetStageRotation_ += 3.141592f * 0.5f;
-	}
-	if (Input::GetInstance()->TriggerKey(DIK_Q)) {
-		targetStageRotation_ -= 3.141592f * 0.5f;
+	if (!isGameOver_) {
+		if (Input::GetInstance()->TriggerKey(DIK_E)) {
+			targetStageRotation_ += 3.141592f * 0.5f;
+		}
+		if (Input::GetInstance()->TriggerKey(DIK_Q)) {
+			targetStageRotation_ -= 3.141592f * 0.5f;
+		}
 	}
 
 	// 目標角度まで一定速度で回転する。
@@ -295,14 +351,15 @@ void GameScene::Update() {
 		stageRotation_ += rotationDifference > 0.0f ? rotationStep : -rotationStep;
 	}
 
-	// ワールド下向きの重力をステージ座標へ変換して適用する。
+	// ステージ回転後の重力方向。ゲームオーバー中は押し戻し判定を止めるが、値は共通で使う。
 	const float gravity = 0.02f;
-	const float playerHalfSize = worldTransform_.scale_.x;
 	const float quarterTurn = 3.141592f * 0.5f;
-	// 回転角を最寄りの90度に丸め、45度を越えた時点で重力方向を切り替える。
 	const float gravityStageRotation = roundf(stageRotation_ / quarterTurn) * quarterTurn;
 	const float gravityX = -sinf(gravityStageRotation) * gravity;
 	const float gravityY = -cosf(gravityStageRotation) * gravity;
+	if (!isGameOver_) {
+	// ワールド下向きの重力をステージ座標へ変換して適用する。
+	const float playerHalfSize = worldTransform_.scale_.x;
 	Input* input = Input::GetInstance();
 	float moveDirection = 0.0f;
 	if (input->PushKey(DIK_A)) {
@@ -370,6 +427,7 @@ void GameScene::Update() {
 	worldTransform_.rotation_.z = stageRotation_;
 	worldTransform_.matWorld_ = MakeAffineMatrix(worldTransform_.scale_, worldTransform_.rotation_, worldTransform_.translation_);
 	worldTransform_.TransferMatrix();
+	}
 
 	// ============================================================
 	// 1番 Wave
@@ -752,6 +810,7 @@ void GameScene::Update() {
 	const float stageCenterY = 9.0f;
 	const float cosine = cosf(stageRotation_);
 	const float sine = sinf(stageRotation_);
+	if (!isGameOver_) {
 	const float playerHalfWidth = worldTransform_.scale_.x;
 	const float playerHalfHeight = worldTransform_.scale_.y;
 	std::vector<WorldTransform*> collisionBlocks;
@@ -779,7 +838,19 @@ void GameScene::Update() {
 			}
 			const bool isMovingHazard = block->scale_.x > 1.001f || block->scale_.y > 1.001f;
 			if (isMovingHazard && playerDamageTimer_ <= 0.0f) {
-				playerDamageTimer_ = 1.0f;
+				deathTimer_ = 0.0f;
+				playerStageVelocity_ = {};
+				for (size_t i = 0; i < burstParticles_.size(); ++i) {
+					BurstParticle& particle = burstParticles_[i];
+					const float angle = 6.2831853f * static_cast<float>(i) / static_cast<float>(burstParticles_.size());
+					const float speed = 0.16f + 0.025f * static_cast<float>(i % 5);
+					particle.transform.Initialize();
+					particle.transform.translation_ = worldTransform_.translation_;
+					particle.transform.scale_ = {0.42f, 0.42f, 0.42f};
+					particle.velocity = {cosf(angle) * speed, sinf(angle) * speed, 0.0f};
+					particle.life = 0.75f + 0.25f * static_cast<float>(i % 4) / 3.0f;
+				}
+				return;
 			}
 
 			if (overlapX < overlapY) {
@@ -818,6 +889,7 @@ void GameScene::Update() {
 	};
 	worldTransform_.matWorld_ = MakeAffineMatrix(worldTransform_.scale_, worldTransform_.rotation_, worldTransform_.translation_);
 	worldTransform_.TransferMatrix();
+	}
 
 	// 各辺のブロックをステージ中心のまわりに回転させる。
 	// 上のアニメーション処理が毎フレーム各ブロックの基準位置を設定するため、
@@ -872,7 +944,7 @@ void GameScene::Update() {
 	// アニメーション変更
 	// ============================================================
 
-	if (Input::GetInstance()->TriggerKey(DIK_1)) {
+	if (!isGameOver_ && Input::GetInstance()->TriggerKey(DIK_1)) {
 		blockAnimation_ = BlockAnimation::Wave;
 
 		waveTimer_ = 0.0f;
@@ -880,14 +952,14 @@ void GameScene::Update() {
 		isWaveReverse_ = (rand() % 2) != 0;
 	}
 
-	if (Input::GetInstance()->TriggerKey(DIK_2)) {
+	if (!isGameOver_ && Input::GetInstance()->TriggerKey(DIK_2)) {
 		blockAnimation_ = BlockAnimation::OddEven;
 
 		oddEvenTimer_ = 0.0f;
 		oddEvenLine_ = rand() % 4;
 	}
 
-	if (Input::GetInstance()->TriggerKey(DIK_3)) {
+	if (!isGameOver_ && Input::GetInstance()->TriggerKey(DIK_3)) {
 		blockAnimation_ = BlockAnimation::Random;
 
 		randomTimer_ = 0.0f;
@@ -896,7 +968,7 @@ void GameScene::Update() {
 		}
 	}
 
-	if (Input::GetInstance()->TriggerKey(DIK_4)) {
+	if (!isGameOver_ && Input::GetInstance()->TriggerKey(DIK_4)) {
 		blockAnimation_ = BlockAnimation::Center;
 
 		waveTimer_ = 0.0f;
@@ -922,9 +994,12 @@ void GameScene::Draw() {
 	};
 
 	// プレイヤー描画
-	const bool isPlayerVisible = playerDamageTimer_ <= 0.0f || static_cast<int>(playerDamageTimer_ * 10.0f) % 2 == 0;
+	const bool isPlayerVisible = deathTimer_ < 0.0f && (playerDamageTimer_ <= 0.0f || static_cast<int>(playerDamageTimer_ * 10.0f) % 2 == 0);
 	if (modelBlock_ && isPlayerVisible) {
 		modelBlock_->Draw(worldTransform_, camera_);
+	}
+	for (const BurstParticle& particle : burstParticles_) {
+		if (particle.life > 0.0f && modelBlock_) modelBlock_->Draw(particle.transform, camera_, &hazardBlockColor_);
 	}
 
 	// ブロックA描画
@@ -974,9 +1049,28 @@ void GameScene::Draw() {
 			modelPrediction_->Draw(predictionTransforms_[i], camera_);
 		}
 	}
-
 	Model::PostDraw();
-
+	if (isGameOver_) {
+		Sprite::PreDraw(dxCommon->GetCommandList());
+		// 黒い半透明スプライトを文字と同時にフェードインし、ステージが見える暗さにする。
+		const float dimAlpha = std::clamp((gameOverTimer_ - 0.45f) / 1.4f, 0.0f, 1.0f) * 0.42f;
+		if (gameOverDimSprite_) {
+			gameOverDimSprite_->SetColor({0.0f, 0.0f, 0.0f, dimAlpha});
+			gameOverDimSprite_->Draw();
+		}
+		const float textAlpha = std::clamp((gameOverTimer_ - 0.45f) / 1.4f, 0.0f, 1.0f);
+		if (gameOverSprite_) {
+			// 表示後の待機中だけ、中央位置を保ったまま上下にゆっくり揺らす。
+			const float idleTime = gameOverTimer_ > 1.85f ? gameOverTimer_ - 1.85f : 0.0f;
+			const float verticalOffset = 8.0f * std::sin(idleTime * 2.0943951f);
+			gameOverSprite_->SetSize({581.0f, 187.0f});
+			gameOverSprite_->SetPosition({349.5f, 266.5f + verticalOffset});
+			gameOverSprite_->SetColor({1.0f, 1.0f, 1.0f, textAlpha});
+			gameOverSprite_->Draw();
+		}
+		Sprite::PostDraw();
+		return;
+	}
 	if (!isStartCountdownReady_ || !isStartCountdownActive_) {
 		return;
 	}

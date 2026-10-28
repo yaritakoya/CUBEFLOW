@@ -77,6 +77,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		}
 		bool isTransitioning = false;
 		bool isTransitioningOut = false;
+		bool isTransitioningToGame = false;
 		float transitionTimer = 0.0f;
 
 		// メインループ
@@ -109,21 +110,35 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 				}
 
 				if (!isTransitioningOut && transitionTimer >= kTransitionPhaseDuration) {
-					gameScene.Initialize();
-					isGameSceneActive = true;
+					if (isTransitioningToGame) {
+						gameScene.Initialize();
+						isGameSceneActive = true;
+					} else {
+						titleScene.Initialize();
+						isGameSceneActive = false;
+					}
 					isTransitioningOut = true;
 					transitionTimer = 0.0f;
 				}
 				if (isTransitioningOut && transitionTimer >= kTransitionPhaseDuration) {
 					isTransitioning = false;
-					gameScene.BeginStartCountdown();
+					if (isTransitioningToGame) {
+						gameScene.BeginStartCountdown();
+					}
 				}
 			} else if (isGameSceneActive) {
 				gameScene.Update();
+				if (gameScene.IsReturnToTitleRequested()) {
+					isTransitioning = true;
+					isTransitioningOut = false;
+					isTransitioningToGame = false;
+					transitionTimer = 0.0f;
+				}
 			} else if (titleScene.Update()) {
 				isTransitioning = true;
 				transitionTimer = 0.0f;
 				isTransitioningOut = false;
+				isTransitioningToGame = true;
 			}
 
 			dxCommon->PreDraw();
