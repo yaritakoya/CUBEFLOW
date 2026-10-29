@@ -4,6 +4,40 @@
 #include <cmath>
 #include <cstdlib>
 
+namespace {
+constexpr uint32_t kBlocksPerLine = 10;
+constexpr float kBlockSpacing = 2.0f;
+
+void DeleteBlocks(std::vector<WorldTransform*>& blocks) {
+	for (WorldTransform* block : blocks) {
+		delete block;
+	}
+	blocks.clear();
+}
+
+void CreateBlockLine(std::vector<WorldTransform*>& blocks, bool isHorizontal, float fixedCoordinate) {
+	for (uint32_t i = 0; i < kBlocksPerLine; ++i) {
+		WorldTransform* block = new WorldTransform();
+		block->Initialize();
+		block->translation_.x = isHorizontal ? kBlockSpacing * i : fixedCoordinate;
+		block->translation_.y = isHorizontal ? fixedCoordinate : kBlockSpacing * i;
+		block->translation_.z = 0.0f;
+		block->matWorld_ = MakeAffineMatrix(block->scale_, block->rotation_, block->translation_);
+		block->TransferMatrix();
+		blocks.push_back(block);
+	}
+}
+
+template <typename DrawBlock>
+void DrawBlocks(const std::vector<WorldTransform*>& blocks, DrawBlock drawBlock) {
+	for (WorldTransform* block : blocks) {
+		if (block) {
+			drawBlock(block);
+		}
+	}
+}
+} // namespace
+
 // デストラクタ
 GameScene::~GameScene() {
 	Release();
@@ -36,85 +70,25 @@ void GameScene::Release() {
 	}
 	worldTransformBlocks_.clear();
 
-	for (WorldTransform* block : blockLine1_) {
-		delete block;
-	}
-	blockLine1_.clear();
-
-	for (WorldTransform* block : blockLine2_) {
-		delete block;
-	}
-	blockLine2_.clear();
-
-	for (WorldTransform* block : blockLine3_) {
-		delete block;
-	}
-	blockLine3_.clear();
-
-	for (WorldTransform* block : floatingBlocks_) {
-		delete block;
-	}
-	floatingBlocks_.clear();
+	DeleteBlocks(blockLine1_);
+	DeleteBlocks(blockLine2_);
+	DeleteBlocks(blockLine3_);
+	DeleteBlocks(floatingBlocks_);
 }
 
 // ブロックBの生成
 void GameScene::InitializeBlockLine1() {
-	const uint32_t kNumBlock = 10;
-	const float kBlockWidth = 2.0f;
-
-	for (uint32_t i = 0; i < kNumBlock; i++) {
-		WorldTransform* block = new WorldTransform();
-		block->Initialize();
-
-		block->translation_.x = kBlockWidth * i;
-		block->translation_.y = 20.0f;
-		block->translation_.z = 0.0f;
-
-		block->matWorld_ = MakeAffineMatrix(block->scale_, block->rotation_, block->translation_);
-
-		block->TransferMatrix();
-		blockLine1_.push_back(block);
-	}
+	CreateBlockLine(blockLine1_, true, 20.0f);
 }
 
 // ブロックCの生成
 void GameScene::InitializeBlockLine2() {
-	const uint32_t kNumBlock = 10;
-	const float kBlockHeight = 2.0f;
-
-	for (uint32_t i = 0; i < kNumBlock; i++) {
-		WorldTransform* block = new WorldTransform();
-		block->Initialize();
-
-		block->translation_.x = 20.0f;
-		block->translation_.y = kBlockHeight * i;
-		block->translation_.z = 0.0f;
-
-		block->matWorld_ = MakeAffineMatrix(block->scale_, block->rotation_, block->translation_);
-
-		block->TransferMatrix();
-		blockLine2_.push_back(block);
-	}
+	CreateBlockLine(blockLine2_, false, 20.0f);
 }
 
 // ブロックDの生成
 void GameScene::InitializeBlockLine3() {
-	const uint32_t kNumBlock = 10;
-	const float kBlockHeight = 2.0f;
-
-	for (uint32_t i = 0; i < kNumBlock; i++) {
-		WorldTransform* block = new WorldTransform();
-		block->Initialize();
-
-		block->translation_.x = -2.0f;
-		block->translation_.y = kBlockHeight * i;
-		block->translation_.z = 0.0f;
-
-		block->matWorld_ = MakeAffineMatrix(block->scale_, block->rotation_, block->translation_);
-
-		block->TransferMatrix();
-		blockLine3_.push_back(block);
-	}
+	CreateBlockLine(blockLine3_, false, -2.0f);
 }
 
 // 初期化
@@ -1018,37 +992,11 @@ void GameScene::Draw() {
 		}
 	}
 
-	// ブロックB描画
-	for (WorldTransform* block : blockLine1_) {
-		if (!block) {
-			continue;
-		}
-
-		DrawBlock(block);
-	}
-
-	// ブロックC描画
-	for (WorldTransform* block : blockLine2_) {
-		if (!block) {
-			continue;
-		}
-
-		DrawBlock(block);
-	}
-
-	// ブロックD描画
-	for (WorldTransform* block : blockLine3_) {
-		if (!block) {
-			continue;
-		}
-
-		DrawBlock(block);
-	}
-
-	// 空中ブロック描画
-	for (WorldTransform* block : floatingBlocks_) {
-		DrawBlock(block);
-	}
+	// 追加ブロック列と空中ブロックを描画
+	DrawBlocks(blockLine1_, DrawBlock);
+	DrawBlocks(blockLine2_, DrawBlock);
+	DrawBlocks(blockLine3_, DrawBlock);
+	DrawBlocks(floatingBlocks_, DrawBlock);
 	if (modelPrediction_) {
 		for (size_t i = 0; i < predictionCount_; ++i) {
 			modelPrediction_->Draw(predictionTransforms_[i], camera_);
